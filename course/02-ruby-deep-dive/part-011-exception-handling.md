@@ -307,12 +307,18 @@ Exception
 ดูโครงสร้างจริงในเครื่องได้ด้วย:
 
 ```ruby
-puts ArgumentError.ancestors.first(5).inspect
-# => [ArgumentError, StandardError, Exception, Object, Kernel]
+puts ArgumentError.superclass       # => StandardError
+puts StandardError.superclass       # => Exception
+puts Exception.superclass           # => Object
 
-puts StandardError.superclass
-# => Exception
+puts ArgumentError.ancestors.include?(StandardError)  # => true
 ```
+
+> **หมายเหตุ:** ถ้าลองสั่ง `ArgumentError.ancestors` เต็มๆ ในเครื่องคุณเอง อาจเห็น module
+> แปลกๆ อย่าง `ErrorHighlight::CoreExt` แทรกอยู่ก่อน `ArgumentError` ด้วย — นั่นเป็นเพราะ
+> Ruby 3.1+ มาพร้อม default gem ชื่อ `error_highlight` ที่ `prepend` ตัวเองเข้าไปเพื่อช่วย
+> ชี้ตำแหน่งที่แม่นยำขึ้นเวลาแสดง error (ทบทวนกลไก `prepend` จาก Part 010 Step 98) ไม่ใช่
+> ความผิดปกติแต่อย่างใด
 
 **กฎที่สำคัญที่สุดในเรื่อง Exception ทั้งหมดของ Ruby:**
 

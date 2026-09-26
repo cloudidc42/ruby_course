@@ -239,11 +239,29 @@ puts account.send(untrusted_method_name)
 เหมือนการเรียกแบบปกติ
 
 ```ruby
+# class UserAccount เดิมจากตัวอย่างก่อนหน้า (แสดงซ้ำเพื่อให้โค้ดนี้รันได้ครบในตัวเอง)
+class UserAccount
+  def initialize(balance)
+    @balance = balance
+  end
+
+  def display_balance
+    "ยอดเงิน: #{@balance}"
+  end
+
+  private
+
+  def wipe_all_data!
+    @balance = 0
+    "ข้อมูลถูกล้างแล้ว!"
+  end
+end
+
 account = UserAccount.new(5000)
 
 puts account.public_send(:display_balance)   # => ยอดเงิน: 5000 (public method เรียกได้ปกติ)
 
-puts account.public_send(:wipe_all_data!)
+account.public_send(:wipe_all_data!)
 # NoMethodError: private method 'wipe_all_data!' called for #<UserAccount>
 # ป้องกันการเรียก private method จากภายนอกได้สำเร็จ แม้ชื่อ method จะมาจาก input ก็ตาม
 ```
@@ -339,6 +357,17 @@ puts order.respond_to?(:calculate_tax, true)   # => true (นับ private ด�
 ### ตัวอย่างจริง: เลือกวิธี serialize object ตามความสามารถของมัน
 
 ```ruby
+class Point
+  def initialize(x, y)
+    @x = x
+    @y = y
+  end
+
+  def to_a
+    [@x, @y]
+  end
+end
+
 def serialize(object)
   if object.respond_to?(:to_h)
     object.to_h
@@ -352,8 +381,8 @@ def serialize(object)
 end
 
 p serialize({ name: "มานี", age: 25 })   # => {:name=>"มานี", :age=>25} (Hash มี to_h อยู่แล้ว)
-p serialize([1, 2, 3])                     # => [1, 2, 3]
-p serialize(42)                             # => "42"
+p serialize(Point.new(1, 2))               # => [1, 2] (มีแค่ to_a ไม่มี to_h)
+p serialize(42)                             # => "42" (มีแค่ to_s)
 ```
 
 ตัวอย่างนี้แสดงแนวคิดสำคัญ: แทนที่จะเช็ค `object.is_a?(Hash)` หรือ `object.class == Hash`
@@ -675,6 +704,14 @@ puts ghost.respond_to?(:anything_at_all)   # => false !! (ทั้งที่�
 เชื่อ `respond_to?` แล้วเลือกที่จะไม่เรียก method นั้น
 
 ```ruby
+class GhostResponderBad
+  def method_missing(method_name, *args)
+    "ได้รับการเรียก #{method_name}"
+  end
+end
+
+ghost = GhostResponderBad.new
+
 def try_greet(obj)
   if obj.respond_to?(:greet)
     obj.greet
@@ -699,6 +736,14 @@ class GhostResponderGood
 
   def respond_to_missing?(method_name, include_private = false)
     true   # บอกความจริงว่า object นี้ "รับมือ" ได้ทุก method ผ่าน method_missing
+  end
+end
+
+def try_greet(obj)
+  if obj.respond_to?(:greet)
+    obj.greet
+  else
+    "object นี้ทักทายไม่เป็น"
   end
 end
 
@@ -925,6 +970,13 @@ puts account.instance_variable_get(:@balance)   # => 999999
 ### ตัวอย่างการใช้งานที่เหมาะสม: เขียน generic inspector/serializer
 
 ```ruby
+class Product
+  def initialize(name, price)
+    @name = name
+    @price = price
+  end
+end
+
 def inspect_all_ivars(object)
   object.instance_variables.each_with_object({}) do |ivar_name, result|
     # ivar_name ได้มาจาก instance_variables ซึ่งคืน array ของ Symbol เช่น [:@name, :@price]
