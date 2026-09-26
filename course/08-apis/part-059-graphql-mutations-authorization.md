@@ -169,24 +169,11 @@ end
   (`{ post: ..., errors: ... }`) — graphql-ruby จะ map ค่าจาก Hash นี้ไปยัง field ที่ตรงกัน
   ให้อัตโนมัติ
 
-### ทดสอบ `resolve` logic ตรงๆ โดยยังไม่ผ่าน GraphQL execution
-
-เพราะ `resolve` เป็น instance method ธรรมดาของ Ruby class เราทดสอบ logic ภายในได้แม้ยังไม่
-เชื่อมเข้า schema เลย (แนวคิดเดียวกับที่ Part 043 ทดสอบ `PostPolicy` ตรงๆ ใน console โดยไม่
-ต้องผ่าน HTTP):
-
-```ruby
-# bin/rails console
-mutation = Mutations::CreatePost.new(object: nil, field: nil, context: {})
-result = mutation.resolve(title: "โพสต์แรกผ่าน Mutation", body: "เนื้อหา", published: false)
-result[:post].persisted?   # => true
-result[:errors]            # => []
-```
-
-ผลลัพธ์นี้คือค่าที่ตรวจสอบจริงจากการรันในสภาพแวดล้อมทดสอบ — สังเกตว่าเรียก `resolve` ตรงๆ
-ได้โดยไม่ต้องเขียน GraphQL query string เลยด้วยซ้ำ วิธีนี้มีประโยชน์ตอน debug logic ภายใน
-mutation อย่างรวดเร็ว แต่การทดสอบแบบเป็นทางการควรยิงผ่าน schema จริงเสมอ (Step 590 จะสาธิต)
-เพราะการเรียกตรงๆ แบบนี้ข้าม type checking ของ `argument` ไปทั้งหมด
+> **หมายเหตุ:** เพราะ `resolve` เป็น instance method ธรรมดาของ Ruby class เราเรียกทดลอง
+> logic ภายในตรงๆ ได้แม้ยังไม่เชื่อมเข้า schema เลย (`Mutations::CreatePost.new(object: nil,
+> field: nil, context: {}).resolve(title: "...")`) มีประโยชน์ตอน debug อย่างรวดเร็ว แต่การ
+> ทดสอบแบบเป็นทางการควรยิงผ่าน `Schema.execute` เสมอ (Step 590) เพราะการเรียกตรงๆ แบบนี้
+> ข้าม type checking ของ `argument` ไปทั้งหมด
 
 ---
 
@@ -272,17 +259,14 @@ argument ผิดชนิด หรือ authorization error ที่จะ�
 
 ### ทำไมถึงออกแบบแบบนี้ (ข้อดีที่จับต้องได้)
 
-1. **HTTP status สื่อความหมายที่ HTTP ควรสื่อจริงๆ เท่านั้น** — คือ "request ไปถึง server และ
-   ประมวลผลได้หรือไม่" ไม่ปนกับ "ข้อมูลที่ส่งมาถูกต้องตาม business rule หรือไม่" (สอง concern
-   นี้อยู่คนละ layer กัน)
-2. **client เขียนโค้ดจัดการ error ได้ตรงไปตรงมา** — เช็ค `if (result.data.createPost.errors.length > 0)`
-   แทนที่จะต้อง try/catch HTTP exception แล้วแกะ response body ออกมาดูอีกที
-3. **รองรับ partial success ได้เป็นธรรมชาติ** — ถ้า mutation เดียวมีหลาย field (เช่น
-   `createPostWithTags` ที่สร้างทั้งโพสต์และแท็กในทีเดียว) แต่ละส่วนสามารถมี `errors` ของ
-   ตัวเองแยกกันได้ โดยที่ HTTP request ทั้งก้อนยังคง "สำเร็จ" ในความหมายของ HTTP
-4. **Schema เป็นเอกสารในตัวเอง** — client เห็นจาก schema ตรงๆ เลยว่า mutation ไหนมีโอกาส
-   ล้มเหลวแบบไหนบ้าง (ผ่านชนิดข้อมูลของ field `errors`) ต่างจาก HTTP status ที่ต้องอ่าน
-   เอกสารแยกต่างหากว่า endpoint นี้คืน status อะไรได้บ้าง
+1. **HTTP status สื่อความหมายที่ HTTP ควรสื่อจริงๆ เท่านั้น** — "request ไปถึง server และ
+   ประมวลผลได้หรือไม่" ไม่ปนกับ "ข้อมูลถูกต้องตาม business rule หรือไม่" (คนละ layer กัน)
+2. **client เขียนโค้ดจัดการ error ได้ตรงไปตรงมา** — เช็ค
+   `if (result.data.createPost.errors.length > 0)` แทนที่จะต้อง try/catch HTTP exception
+3. **รองรับ partial success ได้เป็นธรรมชาติ** — mutation ที่มีหลาย field ในตัวเดียว แต่ละส่วน
+   มี `errors` ของตัวเองแยกกันได้ โดย HTTP request ทั้งก้อนยังคง "สำเร็จ" ในความหมายของ HTTP
+4. **Schema เป็นเอกสารในตัวเอง** — client เห็นจากชนิดข้อมูลของ field `errors` ตรงๆ ว่า
+   mutation ไหนมีโอกาสล้มเหลวแบบไหนบ้าง ไม่ต้องอ่านเอกสารแยกต่างหาก
 
 > **ข้อควรระวัง:** field `errors: [String]` แบบง่ายๆ ที่ใช้ใน Part นี้เหมาะกับตัวอย่างเพื่อ
 > ความเข้าใจ ระบบระดับ production จริงมักออกแบบ `errors` ให้เป็น structured type
@@ -354,52 +338,14 @@ type Mutation {
 mutation call ไหนเวลายิงหลายตัวพร้อมกัน — ในตัวอย่างของ Part นี้จะไม่ใช้ field นี้เพื่อความ
 กระชับ)
 
-### เรียก mutation ผ่าน GraphiQL (development environment)
+### เรียก mutation ผ่าน GraphiQL และ `curl`
 
 Part 058 ติดตั้ง `graphiql-rails` ไว้แล้วที่ `/graphiql` — เปิด `bin/rails server` แล้วเข้า
-`http://localhost:3000/graphiql` พิมพ์ query และ variables แยกกันได้ในหน้าต่างเดียวกัน:
-
-**Query panel:**
-
-```graphql
-mutation CreatePost($title: String!, $body: String) {
-  createPost(input: { title: $title, body: $body }) {
-    post {
-      id
-      title
-      published
-    }
-    errors
-  }
-}
-```
-
-**Variables panel (JSON):**
-
-```json
-{
-  "title": "เรียนรู้ GraphQL Mutation",
-  "body": "เนื้อหาโพสต์"
-}
-```
-
-**ผลลัพธ์ที่ทดสอบได้จริง:**
-
-```json
-{
-  "data": {
-    "createPost": {
-      "post": { "id": "1", "title": "เรียนรู้ GraphQL Mutation", "published": false },
-      "errors": []
-    }
-  }
-}
-```
-
-### เรียก mutation ผ่าน `curl` (จำลอง production client)
-
-GraphiQL สะดวกตอนพัฒนา แต่ client จริง (mobile app, frontend SPA, service อื่น) ยิง HTTP
-request ตรงๆ ผ่าน `POST /graphql` ด้วย body เป็น JSON ที่มี key `query` และ `variables`:
+`http://localhost:3000/graphiql` พิมพ์ query panel และ variables panel (JSON) แยกกันได้ใน
+หน้าต่างเดียวกัน เหมาะสำหรับทดลองระหว่างพัฒนา แต่ client จริง (mobile app, frontend SPA,
+service อื่น) ยิง HTTP request ตรงๆ ผ่าน `POST /graphql` ด้วย body เป็น JSON ที่มี key
+`query` และ `variables` แทน — ทั้งสองวิธีเรียก schema ตัวเดียวกัน ผลลัพธ์จึงเหมือนกันทุก
+ประการ ต่อไปนี้จะสาธิตด้วย `curl` เพราะทดสอบซ้ำและอ่านผลลัพธ์แบบ script ได้ง่ายกว่า:
 
 ```bash
 curl -s -X POST http://localhost:3000/graphql \
@@ -593,8 +539,7 @@ Part 045 สอนเรื่อง JWT authentication สำหรับ REST 
 
 ### `context` คือ Hash ที่เดินทางไปกับทุก field ตลอดการ execute
 
-`GraphqlScratchSchema.execute` (หรือ `BlogSchema.execute` ในตัวอย่างนี้) รับ keyword
-argument ชื่อ `context:` เป็น Hash ธรรมดา — Hash นี้จะถูกส่งต่อเข้าไปให้ **ทุก type, ทุก field,
+`BlogSchema.execute` รับ keyword argument ชื่อ `context:` เป็น Hash ธรรมดา — Hash นี้จะถูกส่งต่อเข้าไปให้ **ทุก type, ทุก field,
 ทุก mutation** ที่ execute ในรอบนั้นๆ เข้าถึงได้ผ่าน method `context` ที่มีอยู่ในทุก class ที่
 สืบทอดจาก `Types::BaseObject` หรือ `Mutations::BaseMutation`
 
@@ -908,57 +853,39 @@ end
   layer (ต่างจาก `errors: [String]` field ใน payload ของ Step 583 ที่เป็น **business
   validation error ที่เราออกแบบเอง**)
 
-### ทดสอบจริง: guest พยายาม `createPost`
+### ทดสอบจริง: guest สร้างโพสต์ และ bob แก้ไขโพสต์ของ alice
 
 ```bash
+# guest (ไม่มี header Authorization) พยายาม createPost
 curl -s -X POST http://localhost:3000/graphql \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "mutation($title: String!) { createPost(input: { title: $title }) { post { id } errors } }",
-    "variables": { "title": "guest post" }
-  }'
+  -d '{"query": "mutation($title: String!) { createPost(input: { title: $title }) { post { id } errors } }", "variables": { "title": "guest post" }}'
 ```
 
-ผลลัพธ์จริงที่ทดสอบได้ (**HTTP status ยังเป็น `200` เหมือนเดิม**):
+ผลลัพธ์จริง (**HTTP status ยังเป็น `200` เหมือนเดิม**):
 
 ```json
 {
-  "errors": [
-    {
-      "message": "ไม่มีสิทธิ์ทำรายการนี้ (create?)",
-      "locations": [{ "line": 1, "column": 29 }],
-      "path": ["createPost"]
-    }
-  ],
+  "errors": [{ "message": "ไม่มีสิทธิ์ทำรายการนี้ (create?)", "path": ["createPost"] }],
   "data": { "createPost": null }
 }
 ```
 
-### ทดสอบจริง: bob (ไม่ใช่เจ้าของ) พยายามแก้ไขโพสต์ของ alice
-
 ```bash
+# bob (ไม่ใช่เจ้าของ) พยายาม updatePost ของ alice
 BOB_TOKEN="eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoyfQ.GhX5ZZ1LyLxp_EyvrR9-JoERVMC16Uz4g4jXgBnLqGI"
 
 curl -s -X POST http://localhost:3000/graphql \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $BOB_TOKEN" \
-  -d '{
-    "query": "mutation($id: ID!, $title: String) { updatePost(input: { id: $id, title: $title }) { post { id title } errors } }",
-    "variables": { "id": "1", "title": "แก้โดยบ็อบ" }
-  }'
+  -d '{"query": "mutation($id: ID!, $title: String) { updatePost(input: { id: $id, title: $title }) { post { id title } errors } }", "variables": { "id": "1", "title": "แก้โดยบ็อบ" }}'
 ```
 
-ผลลัพธ์จริง (HTTP status `200`):
+ผลลัพธ์จริง (HTTP status `200` เช่นกัน):
 
 ```json
 {
-  "errors": [
-    {
-      "message": "ไม่มีสิทธิ์ทำรายการนี้ (update?)",
-      "locations": [{ "line": 1, "column": 38 }],
-      "path": ["updatePost"]
-    }
-  ],
+  "errors": [{ "message": "ไม่มีสิทธิ์ทำรายการนี้ (update?)", "path": ["updatePost"] }],
   "data": { "updatePost": null }
 }
 ```
@@ -1042,51 +969,28 @@ end
 
 ก่อนเข้ากลไกจริงใน Step 589 ต้องเข้าใจ **ผลลัพธ์ที่ต่างกัน** ของสองแนวทางนี้ก่อน:
 
-**แนวทาง A — ซ่อนเงียบๆ (field เป็น nullable):**
+**แนวทาง A — ซ่อนเงียบๆ (field เป็น nullable, เช่น `post(id: ID!): Post` ไม่มี `!` ต่อท้าย
+`Post`):** ถ้าไม่มีสิทธิ์เห็น field คืนค่า `null` เฉยๆ **ไม่มี `errors` ใดๆ เลย** ผลลัพธ์จริง
+(bob ยิง `post(id: "1")` ไปหา draft ของ alice): `{ "data": { "post": null } }` — client มอง
+ไม่ออกด้วยซ้ำว่า "ไม่มีสิทธิ์" กับ "ID นี้ไม่มีอยู่จริง" ต่างกันอย่างไร ข้อดีคือ **ไม่รั่วไหล
+ข้อมูลแม้แต่การมีอยู่ของ record** เหมาะกับข้อมูลที่ละเอียดอ่อนมาก
 
-```graphql
-type Query {
-  post(id: ID!): Post   # ไม่มี "!" ต่อท้าย Post แปลว่า null ได้
-}
-```
-
-ถ้าไม่มีสิทธิ์เห็น → field คืนค่า `null` เฉยๆ พร้อม `"data": {"post": null}` **ไม่มี
-`errors` ใดๆ เลย** — ผลลัพธ์แบบนี้ทดสอบได้จริง (bob ยิง `post(id: "1")` ไปหา draft ของ
-alice):
-
-```json
-{ "data": { "post": null } }
-```
-
-client มองไม่ออกด้วยซ้ำว่า "ไม่มีสิทธิ์" กับ "ID นี้ไม่มีอยู่จริง" ต่างกันอย่างไร — ข้อดีคือ
-**ไม่รั่วไหลข้อมูลแม้แต่การมีอยู่ของ record** (เหมาะกับข้อมูลที่ละเอียดอ่อนมาก เช่น "โพสต์
-ส่วนตัว" ที่ไม่ต้องการให้คนอื่นรู้ด้วยซ้ำว่ามันมีอยู่)
-
-**แนวทาง B — raise error ชัดเจน (field เป็น non-null หรือ raise เอง):**
-
-ถ้าประกาศ field เป็น non-null (`Post!`) แล้ว authorization ปฏิเสธ graphql-ruby จะ raise
-error ให้อัตโนมัติเพราะ "สัญญา" ของ schema บอกว่า field นี้ **ห้าม null** แต่ authorization
-กลับบังคับให้เป็น null — เป็นข้อขัดแย้งที่ graphql-ruby ยกระดับเป็น error ทันที ผลลัพธ์ที่
-ทดสอบได้จริงจากกรณีนี้ (field ทดลองชื่อ `secretPost` ที่ประกาศเป็น `null: false`):
+**แนวทาง B — raise error ชัดเจน (field เป็น non-null, `Post!`):** ถ้า authorization ปฏิเสธ
+graphql-ruby จะ raise error ให้อัตโนมัติ เพราะ "สัญญา" ของ schema บอกว่า field นี้ห้าม
+null แต่ authorization กลับบังคับให้เป็น null — ผลลัพธ์จริงจากการทดลองประกาศ field ทดสอบ
+`secretPost: Post!`:
 
 ```json
 {
-  "errors": [
-    {
-      "message": "Cannot return null for non-nullable field Query.secretPost",
-      "locations": [{ "line": 1, "column": 19 }],
-      "path": ["secretPost"]
-    }
-  ],
+  "errors": [{ "message": "Cannot return null for non-nullable field Query.secretPost", "path": ["secretPost"] }],
   "data": null
 }
 ```
 
 สังเกตว่า **`"data": null` ทั้งก้อน** ไม่ใช่แค่ field เดียว เพราะ GraphQL spec กำหนดว่าถ้า
 non-null field คืนค่า null ต้อง "ลอย" ข้อผิดพลาดขึ้นไปยัง parent field ที่ nullable ตัวถัดไป
-เรื่อยๆ (ในตัวอย่างนี้ parent คือ `data` เอง ซึ่งเป็น root ไม่มีที่ให้ลอยต่อ จึงกลายเป็น `null`
-ทั้งหมด) — behavior นี้เข้มงวดกว่าและ "ดัง" กว่าแนวทาง A มาก เหมาะกับกรณีที่ต้องการให้ client
-รู้ทันทีว่ามีบางอย่างผิดปกติ ไม่ใช่แค่ "ไม่มีข้อมูล"
+(ในที่นี้คือ `data` เอง ซึ่งเป็น root จึงกลายเป็น `null` ทั้งหมด) — เข้มงวดและ "ดัง" กว่าแนวทาง A
+มาก เหมาะกับกรณีที่ต้องการให้ client รู้ทันทีว่ามีบางอย่างผิดปกติ ไม่ใช่แค่ "ไม่มีข้อมูล"
 
 ### หลักการเลือกใช้ในทางปฏิบัติ
 
@@ -1154,7 +1058,7 @@ end
 :verify_authorized` ใน Part 043 Step 428 แก้ปัญหา "ลืม authorize" ฝั่ง REST controller
 เพียงแต่กลไกนี้ **ป้องกันไว้ล่วงหน้าโดยอัตโนมัติ แทนที่จะแค่ตรวจจับความผิดพลาดทีหลัง**)
 
-### ทดสอบจริง: field `post(id:)` ตอนนี้ซ่อนข้อมูลอัตโนมัติแล้ว
+### ทดสอบจริง: field `post(id:)` และ `posts` ตอนนี้ซ่อนข้อมูลอัตโนมัติแล้ว
 
 ```ruby
 # bin/rails console
@@ -1176,23 +1080,16 @@ BlogSchema.execute(query, variables: { id: draft.id.to_s }, context: { current_u
 `Post.find_by(id: id)` เฉยๆ) การป้องกันทั้งหมดเกิดขึ้นที่ `PostType.authorized?` เพียงจุด
 เดียว
 
-### ทดสอบจริง: field `posts` (list) ก็ถูกกรองซ้อนสองชั้นเช่นกัน
-
-`posts` field ใช้ `Pundit.policy_scope!` (Step 588) กรองที่ระดับ SQL query อยู่แล้ว แต่ถ้า
-`Scope` เขียนพลาด (เช่น ลืมเงื่อนไขบางอย่าง) `authorized?` ที่ผูกกับ `PostType` จะเป็นเกราะ
-ป้องกันชั้นที่สอง — graphql-ruby จะกรอง item ที่ `authorized?` คืน `false` ออกจาก list
-โดยอัตโนมัติเงียบๆ (ไม่ raise error เพราะ list field ประกาศเป็น `[Types::PostType]` ที่
-nullable ต่อ element ได้ตามค่า default) นี่คือ **defense in depth** (การป้องกันหลายชั้น)
-ที่แนวทางปฏิบัติที่ดีของระบบ authorization ควรมี ไม่ใช่พึ่งจุดป้องกันจุดเดียว
+field `posts` (list) ก็ได้รับการป้องกันซ้อนสองชั้นเช่นกัน: `Pundit.policy_scope!` (Step 588)
+กรองที่ระดับ SQL query อยู่แล้ว แต่ถ้า `Scope` เขียนพลาด `authorized?` ที่ผูกกับ `PostType`
+จะเป็นเกราะป้องกันชั้นที่สอง โดยกรอง item ที่ไม่ผ่านออกจาก list เงียบๆ อัตโนมัติ — นี่คือ
+**defense in depth** (การป้องกันหลายชั้น) ที่ไม่พึ่งจุดป้องกันจุดเดียว
 
 > **ข้อควรระวังเรื่อง performance:** `authorized?` ถูกเรียก **ทุกครั้ง ทุก object** ที่ resolve
-> ออกมาเป็น type นั้น ถ้า policy ต้อง query ฐานข้อมูลเพิ่ม (เช่น เช็ค role ผ่าน association)
-> การ query `posts` ที่คืนมา 100 รายการ อาจหมายถึง N+1 query จากการเรียก `authorized?` ซ้ำ
-> 100 ครั้ง — แนวทางแก้คือ cache ค่าที่ต้องใช้ซ้ำไว้ใน `context` ตั้งแต่ต้น (เช่น
-> `context[:current_user]` ที่โหลดมาแล้วครั้งเดียวตอน authenticate ใน Step 586) และให้
-> policy ใช้ค่าที่มีอยู่แล้วใน memory แทนการ query ซ้ำ ไม่ใช่ปัญหาที่เกิดในตัวอย่างของ Part นี้
-> เพราะ `admin?`/`owner?` เช็คจาก attribute ที่โหลดมาพร้อม object อยู่แล้ว แต่เป็นเรื่องที่ต้อง
-> ระวังเมื่อ policy ซับซ้อนขึ้นในระบบจริง
+> ออกมาเป็น type นั้น ถ้า policy ต้อง query ฐานข้อมูลเพิ่มต่อ record การ query list ยาวๆ อาจ
+> กลายเป็น N+1 — แนวทางแก้คือ cache ค่าที่ต้องใช้ซ้ำไว้ใน `context` ตั้งแต่ต้น (เช่น
+> `context[:current_user]`) ไม่ใช่ปัญหาที่เกิดในตัวอย่างนี้เพราะ `admin?`/`owner?` เช็คจาก
+> attribute ที่โหลดมาพร้อม object อยู่แล้ว แต่ต้องระวังเมื่อ policy ซับซ้อนขึ้นในระบบจริง
 
 ---
 
@@ -1471,73 +1368,10 @@ GraphQL API ทั้งหมด ให้ครบตามข้อกำห�
   `pundit_authorize!(post, :update?)`, `pundit_authorize!(post, :destroy?)` ตามลำดับ)
 - `app/graphql/types/mutation_type.rb` — ลงทะเบียนทั้งสาม mutation จาก Step 585
 
-**RSpec spec ยืนยันข้อ 5–6 ของโจทย์ (ไฟล์ใหม่ที่โจทย์นี้เพิ่มเข้ามา):**
-
-```ruby
-# spec/graphql/mutations/update_post_spec.rb
-require "rails_helper"
-
-RSpec.describe "updatePost mutation", type: :request do
-  let(:owner)        { create(:user) }
-  let(:other_member) { create(:user) }
-  let(:admin)        { create(:user, :admin) }
-  let(:post_record)  { create(:post, user: owner, title: "เดิม") }
-
-  let(:mutation) do
-    <<~GQL
-      mutation($id: ID!, $title: String) {
-        updatePost(input: { id: $id, title: $title }) {
-          post { id title }
-          errors
-        }
-      }
-    GQL
-  end
-
-  def execute(current_user:, title: "แก้ไขแล้ว")
-    BlogSchema.execute(
-      mutation,
-      variables: { id: post_record.id.to_s, title: title },
-      context: { current_user: current_user }
-    ).to_h
-  end
-
-  it "allows the owner and returns errors: [] on success" do
-    result = execute(current_user: owner)
-    expect(result.dig("data", "updatePost", "errors")).to eq([])
-  end
-
-  it "allows an admin to update someone else's post" do
-    result = execute(current_user: admin)
-    expect(result.dig("data", "updatePost", "post", "title")).to eq("แก้ไขแล้ว")
-  end
-
-  it "puts validation failures in the payload's errors field, not top-level errors" do
-    result = execute(current_user: owner, title: "")
-    expect(result.dig("data", "updatePost", "errors")).to include("Title can't be blank")
-    expect(result["errors"]).to be_nil
-  end
-
-  it "puts authorization failures in the top-level errors, not the payload" do
-    result = execute(current_user: other_member)
-    expect(result.dig("data", "updatePost")).to be_nil
-    expect(result["errors"].first["message"]).to include("ไม่มีสิทธิ์")
-  end
-end
-```
-
-รันทดสอบจริง:
-
-```bash
-bundle exec rspec spec/graphql/mutations/update_post_spec.rb
-```
-
-```
-....
-
-Finished in 0.14891 seconds (files took 1.01 seconds to load)
-4 examples, 0 failures
-```
+**ข้อ 6 ของโจทย์ (RSpec ยืนยัน owner/admin/other_member)** ครอบคลุมไปแล้วโดย
+`spec/graphql/mutations/update_post_spec.rb` ที่เขียนไว้ใน Step 590 ทุกประการ — ไม่ต้อง
+เขียนเพิ่ม เพราะทดสอบครบทั้ง 3 เคสตามที่โจทย์ต้องการอยู่แล้ว (owner ผ่าน, admin ผ่าน,
+other_member ถูกปฏิเสธด้วย error ใน top-level `errors`)
 
 **ทดสอบจริงด้วย `curl` ตามข้อ 7 ของโจทย์ (สองผู้ใช้: alice เป็นเจ้าของ, bob ไม่ใช่เจ้าของ):**
 
