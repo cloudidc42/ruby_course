@@ -107,7 +107,11 @@ Finished in 0.00142 seconds (files took 0.04512 seconds to load)
 gem install rspec
 
 rspec --version
-# => 3.13.0
+# => RSpec 3.13
+#      - rspec-core 3.13.6
+#      - rspec-expectations 3.13.5
+#      - rspec-mocks 3.13.8
+#      - rspec-support 3.13.7
 ```
 
 วิธีที่ 2 — ติดตั้งผ่าน Bundler (แนะนำสำหรับโปรเจกต์จริง เพราะล็อกเวอร์ชันได้แน่นอน):
@@ -133,7 +137,11 @@ gem "rspec", "~> 3.13"
 bundle install
 
 bundle exec rspec --version
-# => 3.13.0
+# => RSpec 3.13
+#      - rspec-core 3.13.6
+#      - rspec-expectations 3.13.5
+#      - rspec-mocks 3.13.8
+#      - rspec-support 3.13.7
 ```
 
 > **แนวคิดสำคัญ:** ในโปรเจกต์จริงควรเรียกผ่าน `bundle exec rspec` เสมอ (เหมือนที่เรียนเรื่อง
@@ -839,23 +847,25 @@ end
 rspec hook_lifecycle_spec.rb --format documentation
 ```
 
-ผลลัพธ์:
+ผลลัพธ์ (สังเกตว่า RSpec formatter พิมพ์ชื่อ example group ก่อน แล้วค่อยพิมพ์บรรทัด
+"ตัวอย่างที่ N" ต่อท้ายทันทีที่ example นั้นรันเสร็จ จึงเห็น `puts` จากในโค้ดแทรกอยู่ก่อน
+บรรทัดชื่อ example เสมอ):
 
 ```
+Hook lifecycle
+
 [before context] เริ่มต้นชุดทดสอบ (รันครั้งเดียว)
   [before each] เตรียมข้อมูลก่อนแต่ละ example
     -> รัน example ที่ 1
   [after each] เก็บกวาดหลังแต่ละ example
+  ตัวอย่างที่ 1
   [before each] เตรียมข้อมูลก่อนแต่ละ example
     -> รัน example ที่ 2
   [after each] เก็บกวาดหลังแต่ละ example
+  ตัวอย่างที่ 2
 [after context] จบชุดทดสอบ (รันครั้งเดียว)
 
-Hook lifecycle
-  ตัวอย่างที่ 1
-  ตัวอย่างที่ 2
-
-Finished in 0.00098 seconds (files took 0.04211 seconds to load)
+Finished in 0.00091 seconds (files took 0.06654 seconds to load)
 2 examples, 0 failures
 ```
 
