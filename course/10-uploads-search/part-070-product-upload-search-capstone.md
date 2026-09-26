@@ -7,7 +7,7 @@
 > รวมถึง Part 034 query interface, Part 038 pagination/sorting/filtering, และ Part 061 ActiveJob
 > เบื้องต้นจาก Phase 9)
 > **เวอร์ชันที่ใช้:** Ruby 3.3.x / Rails 8.1.x (โปรเจกต์ทั้งหมดใน Part นี้สร้างและทดสอบรันจริงบน
-> Ruby 3.3.6 + Rails 8.1.4 + PostgreSQL 16 + `pg_search` 2.4.0 + `pagy` 9.4.0 +
+> Ruby 3.3.6 + Rails 8.1.4 + PostgreSQL 16.13 + `pg_search` 2.4.0 + `pagy` 9.4.0 +
 > `image_processing` 1.14.0 (`ruby-vips` 2.3.0 เป็น backend) — ทุกคำสั่ง `bin/rails
 > console`/`runner` และทุก request ที่แสดงในเอกสารนี้ยิงจริงกับ server ที่รันอยู่จริงด้วย `curl`
 > รวมถึงการอัปโหลดรูปภาพจริงผ่าน multipart form ไม่ใช่โค้ดที่เขียนคาดเดาไว้ล่วงหน้า)
@@ -107,7 +107,7 @@ cd product_catalog
 ```
 ruby 3.3.6 (2024-11-05 revision 75015d4c1f) [x86_64-linux]
 Rails 8.1.4
-PostgreSQL 16.x
+PostgreSQL 16.13
 ```
 
 > **หมายเหตุ:** `rails new --database=postgresql` เขียน `config/database.yml` ให้ชี้ไปที่
@@ -782,7 +782,8 @@ class Product < ApplicationRecord
 
   # ...
 
-  # --- pg_search: dual-scope pattern ---
+  # --- pg_search: dual-scope pattern (ทบทวน Part 068 Step 680 — ตั้งชื่อ scope ด้วย suffix
+  # _en/_th ตามธรรมเนียมเดียวกับ `search_title_en`/`search_title_th` ที่ Part 068 สอนไว้) ---
   # tsearch ใช้ full-text search dictionary ของ PostgreSQL (english) — เหมาะกับคำภาษาอังกฤษ
   # ที่ผัน stem ได้ (เช่น "running" แมตช์ "run") แต่ "มองไม่เห็น" คำภาษาไทยเป็นคำๆ เพราะไม่มี
   # dictionary ภาษาไทยติดตั้งมาให้ ทำให้ทั้งประโยคไทยถูกมองเป็น "คำเดียว" ก้อนใหญ่
@@ -794,7 +795,12 @@ class Product < ApplicationRecord
   # ค้นหาคำไทยและคำสะกดใกล้เคียง (typo-tolerant) ได้ผลดีกว่า tsearch มาก แลกกับการที่ผลลัพธ์
   # ไม่ได้ผ่านการวิเคราะห์ทางภาษาศาสตร์ใดๆ เลย (ไม่มี stemming, ไม่ตัดคำหยุด)
   #
-  # จงใจใช้ `against: :name` เพียงคอลัมน์เดียว **ไม่รวม description** — พบระหว่างทดสอบว่าถ้า
+  # `ranked_by: ":trigram"` (ทบทวน Part 068 Step 677–678) จำเป็นเมื่อ `using:` เป็น `:trigram`
+  # ล้วนๆ — ถ้าไม่ตั้งไว้ rank ที่ได้จาก `.with_pg_search_rank` จะเป็น 0 เสมอ (pg_search ไม่รู้ว่า
+  # ควรเอาค่าอะไรมาเป็น rank ให้ ทั้งที่ตัว query ที่กรองผลลัพธ์เองใช้ similarity ถูกต้องอยู่แล้ว)
+  #
+  # จงใจใช้ `against: :name` เพียงคอลัมน์เดียว **ไม่รวม description** (ตรงกับคำแนะนำใน Part 068
+  # Step 677: "จำกัด trigram search ไว้ที่คอลัมน์สั้นๆ ที่มีความหมายชัด") — พบระหว่างทดสอบว่าถ้า
   # ใช้ `against: [:name, :description]` เหมือน tsearch ด้านบน pg_search จะเอาทั้งสองคอลัมน์
   # มาต่อกันเป็น string เดียวก่อนคำนวณ similarity เมื่อ description ยาวกว่า name มาก อัตราส่วน
   # ตัวอักษรที่ตรงกัน (similarity) จะถูก "เจือจาง" จนต่ำกว่า threshold แม้ query จะสะกดใกล้เคียง
@@ -803,10 +809,15 @@ class Product < ApplicationRecord
   # 0.15 จนหลุด threshold ไปเลย)
   pg_search_scope :search_by_name_and_description_th,
                    against: :name,
-                   using: { trigram: { threshold: 0.15 } }
+                   using: { trigram: { threshold: 0.15 } },
+                   ranked_by: ":trigram"
 
-  # รวมผลลัพธ์จากทั้งสอง scope เข้าด้วยกัน: tsearch มาก่อนเสมอ (แม่นยำกว่าสำหรับคำอังกฤษและคำไทย
-  # ที่ขึ้นต้นตรงกับ query พอดี) ตามด้วยผลลัพธ์จาก trigram ที่ tsearch ยังไม่เจอ (ครอบคลุมคำสะกด
+  # รวมผลลัพธ์จากทั้งสอง scope เข้าด้วยกัน — ต่างจาก Part 068 Step 678 (`search_combo`) ที่รวม
+  # tsearch+trigram ไว้ใน `pg_search_scope` เดียวด้วย `ranked_by: ":tsearch + (0.5 * :trigram)"`
+  # Part นี้แยกเป็นสอง scope อิสระแล้วรวมฝั่ง Ruby แทน เพราะ dictionary คนละตัวกันโดยสิ้นเชิง
+  # (`:name` อย่างเดียวสำหรับ trigram, `:name`+`:description` สำหรับ tsearch) ทำให้คำนวณเป็น
+  # `ts_rank` เดียวกันไม่ได้อยู่แล้ว — tsearch มาก่อนเสมอ (แม่นยำกว่าสำหรับคำอังกฤษและคำไทยที่
+  # ขึ้นต้นตรงกับ query พอดี) ตามด้วยผลลัพธ์จาก trigram ที่ tsearch ยังไม่เจอ (ครอบคลุมคำสะกด
   # ใกล้เคียง/พิมพ์ผิด) แล้วรักษาลำดับความเกี่ยวข้องนั้นไว้ด้วย in_order_of (Rails 7.0+)
   def self.search_by_name_and_description(query)
     return all if query.blank?
@@ -1232,7 +1243,8 @@ class Product < ApplicationRecord
 
   pg_search_scope :search_by_name_and_description_th,
                    against: :name,
-                   using: { trigram: { threshold: 0.15 } }
+                   using: { trigram: { threshold: 0.15 } },
+                   ranked_by: ":trigram"
 
   def self.search_by_name_and_description(query)
     return all if query.blank?
