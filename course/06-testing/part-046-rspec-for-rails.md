@@ -447,6 +447,20 @@ end
 bundle exec rspec spec/models/post_spec.rb --format documentation
 ```
 
+```
+Post
+  validations
+    is valid with valid attributes
+    is invalid without a title
+    is invalid when status is not one of the allowed values
+  before_validation :set_default_status
+    defaults status to draft when not given
+    does not override an explicitly given status
+
+Finished in 0.05 seconds (files took 0.98 seconds to load)
+5 examples, 0 failures
+```
+
 **สังเกตรูปแบบสำคัญที่ต่างจาก Part 019:**
 
 - ทดสอบ validation ของ ActiveRecord ด้วย `be_valid`/`not_to be_valid` แทนการเรียก method ตรงๆ
