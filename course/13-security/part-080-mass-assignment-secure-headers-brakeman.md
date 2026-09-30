@@ -913,7 +913,7 @@ jobs:
   run: |
     bundle exec brakeman \
       --ignore-config config/brakeman.ignore \
-      --prune-ignore-file \
+      --prune-ignore-file \  # ลบ entry ที่ไม่มี warning ที่ตรงกันอีกแล้ว
       --format text
 ```
 
